@@ -1,97 +1,69 @@
-# VetClinic QA Demo: Playwright + C# + Azure DevOps + k6
+# VetClinic QA Automation Demo
 
-Proiect demo construit după descrierea rolului **QA Engineer – Test Automation / TestOps** (Arnia, client final din domeniul medical/veterinar). Scenariul e o clinică veterinară care își ține pacienții (animalele) în **Swagger Petstore**, un API public, partajat și uneori instabil. Exact pe un astfel de backend se exersează stabilizarea testelor flaky.
+**Playwright + TypeScript · C# (Refit & RestSharp) · Azure DevOps YAML · k6 · Application Insights**
+
+A small but complete test automation ecosystem for a fictional veterinary clinic. Patients (pets) live in the public [Swagger Petstore](https://petstore.swagger.io/) API, which is shared, eventually consistent and occasionally slow. That makes it a realistic backend for showing how to keep a suite **stable** rather than just green once.
 
 ```
 vet-qa-demo/
-├── app/                    mini front-end „VetClinic” (HTML + JS, fără dependențe)
-├── playwright/             framework nativ Playwright + TypeScript (UI + API)
-│   ├── playwright.config.ts   proiecte api / ui-chromium / ui-firefox, retries în CI, trace, JUnit
-│   ├── fixtures/test.ts       fixtures custom: petApi, registeredPatient (setup + teardown), patientsPage
-│   ├── utils/petApi.ts        client API tipizat + polling pentru eventual consistency
-│   ├── pages/PatientsPage.ts  page object cu locatori pe rol/label
-│   └── tests/api, tests/ui    teste
-├── api-csharp/             suita API în C# (.NET 8, NUnit) cu Refit ȘI RestSharp
-│   ├── Clients/IPetApi.cs        Refit: API-ul descris ca interfață
-│   ├── Clients/PetRestClient.cs  RestSharp: request-uri construite manual (stil „legacy”)
-│   ├── Support/TestSupport.cs    config, date unice, Wait.UntilAsync (polling în loc de Thread.Sleep)
-│   └── Tests/LegacyStabilizationExample.cs   ÎNAINTE / DUPĂ stabilizarea unui test moștenit
-├── performance/patients-load.js   k6: ramp-up, thresholds p95/p99, rata de erori
-├── azure-pipelines.yml     3 stage-uri: Playwright ∥ C# → k6 (nightly/manual), cu PublishTestResults
-└── docs/app-insights-kql.md   query-uri KQL pentru latență, erori, dependințe, trasarea unui request
+├── app/                  minimal "VetClinic" front-end (plain HTML/JS, no dependencies)
+├── playwright/           native Playwright + TypeScript framework, UI and API
+│   ├── playwright.config.ts   projects: api / ui-chromium / ui-firefox; CI-only retries; traces; JUnit
+│   ├── fixtures/test.ts       custom fixtures: typed API client, seeded patient with teardown, page object
+│   ├── utils/petApi.ts        typed API client + bounded polling for eventual consistency
+│   ├── pages/PatientsPage.ts  page object using role/label locators
+│   └── tests/{api,ui}
+├── api-csharp/           .NET 8 + NUnit API suite, same API covered with Refit AND RestSharp
+│   ├── Clients/IPetApi.cs              Refit (interface-first client)
+│   ├── Clients/PetRestClient.cs        RestSharp (hand-built requests, typical of legacy suites)
+│   ├── Support/TestSupport.cs          config, unique test data, Wait.UntilAsync (no Thread.Sleep)
+│   └── Tests/LegacyStabilizationExample.cs   before/after of stabilizing an inherited flaky test
+├── performance/patients-load.js   k6: ramp-up profile, p95/p99 and error-rate thresholds
+├── azure-pipelines.yml   Playwright ∥ C# stages → nightly/manual k6 stage, results in the Tests tab
+└── docs/app-insights-kql.md   KQL queries for latency, failures, dependencies and request tracing
 ```
 
-## Cum rulezi
+## Running it
 
-**Playwright** (cere Node.js 20+):
+**Playwright** (Node.js 20+)
 ```bash
 cd playwright
-npm install
+npm ci
 npx playwright install chromium firefox
-npx playwright test               # toate
-npx playwright test --project=api # doar API
-npx playwright show-report        # raport HTML
+npx playwright test                 # everything
+npx playwright test --project=api   # API only
+npx playwright test --grep @smoke   # smoke subset
+npx playwright show-report
 ```
 
-**C#** (cere .NET 8 SDK):
+**C#** (.NET 8 SDK)
 ```bash
 dotnet test api-csharp/VetApi.Tests.csproj --settings api-csharp/test.runsettings
 dotnet test api-csharp/VetApi.Tests.csproj --filter "Category=smoke"
 ```
 
-**k6** (cere k6 instalat):
+**k6**
 ```bash
 k6 run -e PROFILE=smoke performance/patients-load.js
+k6 run performance/patients-load.js          # ramp-up load profile
 ```
 
-## Legătura cu cerințele rolului
+## Design choices
 
-| Cerința clientului | Unde e în demo |
+- **Stability over retries.** Retries run only in CI and are capped at 2, so a retried pass is reported as *flaky* instead of hidden. Reads that may lag behind a write are polled on that single call (`expect.poll` / `Wait.UntilAsync`) with a bounded timeout. There are no fixed sleeps.
+- **Unique test data, guaranteed cleanup.** Every test creates its own patient with a unique id and deletes it in teardown, which matters on a backend shared with the whole internet.
+- **Verify the backend, not the echo.** UI and PUT tests read the data back from the API instead of trusting the response or the success message.
+- **Network mocking for rare paths.** The UI's HTTP 500 handling is tested with `page.route`, because the real API almost never returns it.
+- **Two C# client styles.** Refit for concise, typed new tests; RestSharp because that is what many existing suites are written in.
+- **Pipeline as the source of truth.** JUnit (Playwright) and TRX (NUnit) are published to the Azure DevOps Tests tab, while HTML reports and traces are kept as artifacts. Load tests gate the nightly build through k6 thresholds.
+
+## Local run results (10 Oct 2026, Windows)
+
+| Suite | Result |
 |---|---|
-| Framework nativ Playwright, UI + API, TypeScript | `playwright/`: config, fixtures, page object, teste API și UI |
-| Preluarea testelor stricate, stabilizare, teste flaky | `utils/petApi.ts` (`waitUntilVisible`), `LegacyStabilizationExample.cs`, retries doar în CI, trace la primul retry |
-| Suita API legacy în C#, cu Refit / RestSharp | `api-csharp/`: același API testat cu ambele librării |
-| Azure DevOps, YAML pipelines, test tasks | `azure-pipelines.yml`: stage-uri paralele, PublishTestResults (JUnit + TRX), artefacte, schedule |
-| Performance / load (k6, JMeter) | `performance/patients-load.js`: stages și thresholds care fac stage-ul să pice |
-| Application Insights, latență API | `docs/app-insights-kql.md` + teste cu buget de latență |
-| AI coding tools (Claude Code) | proiectul însuși, construit cu Claude Code |
+| Playwright: API + UI on Chromium and Firefox | **15/15 passed** (8.9 s); **45/45** with `--repeat-each=3`, no flaky tests |
+| C# NUnit: Refit + RestSharp | **11/11 passed** (4 s), stable across 3 consecutive runs (the *Before* example is `[Explicit]` by design) |
+| k6 smoke (2 VUs × 30 s) | **all thresholds passed**: p95 133 ms, p99 134 ms, 0% errors, 132 requests |
 
-## Puncte de discuție pentru interviu
-
-1. **„Ai moștenit o suită stricată. Ce faci?”**
-   Rulez totul de câteva ori și împart failure-urile în trei: produs, test sau mediu. Pun testele flaky în carantină, cu tag, ca să nu blocheze pipeline-ul, dar să rămână vizibile. Apoi caut cauzele clasice: id-uri fixe pe un backend partajat, `Thread.Sleep`, ordinea testelor, date nescoase după rulare, clienți HTTP nedisposed. Exemplul concret e în `LegacyStabilizationExample.cs`.
-
-2. **„Retries: da sau nu?”**
-   Da, doar în CI și limitat la 2. Un test care trece la retry e raportat ca *flaky* și ajunge pe listă pentru reparat. Retry-ul nu are voie să ascundă problema. La partea de API, polling-ul țintit pe un singur apel (`expect.poll` sau `Wait.UntilAsync`) e mai bun decât retry-ul pe tot testul.
-
-3. **„Refit sau RestSharp?”**
-   Refit descrie API-ul ca o interfață și e scurt și tipizat, potrivit pentru suite noi. RestSharp construiește request-urile manual și e mai flexibil la cazuri ciudate. Multe suite mai vechi sunt scrise în RestSharp. Le pot menține pe amândouă.
-
-4. **„Cum folosești Application Insights când pică un test?”**
-   Iau `operation_Id` din request-ul picat și urmăresc în KQL requests, dependencies și exceptions. Așa văd dacă problema e în API, în baza de date sau la un vendor extern. Query-urile sunt în `docs/`.
-
-5. **„De ce k6 doar nightly?”**
-   Testele de load pe fiecare PR sunt lente și zgomotoase. Pe PR rulează smoke-ul funcțional. Load-ul rulează noaptea sau manual, iar thresholds-urile (p95, rata de erori) fac stage-ul să pice.
-
-## Java → C#: diferențele care contează
-
-| Java | C# |
-|---|---|
-| `String`, `boolean` | `string`, `bool` |
-| `List<String> x = new ArrayList<>();` | `var x = new List<string>();` |
-| getter/setter | proprietăți: `public string Name { get; set; }` |
-| `record Pet(...)` (Java 16+) | `record Pet(...)` + `with { Status = "sold" }` |
-| `CompletableFuture<T>` | `Task<T>` + `async` / `await` |
-| Streams: `.stream().filter().map()` | LINQ: `.Where().Select()` |
-| `@Test`, `@BeforeEach` (JUnit/TestNG) | `[Test]`, `[SetUp]`, `[TestCase(...)]` (NUnit) |
-| `try-with-resources` | `using var client = ...;` |
-| Maven `pom.xml` | `.csproj` + NuGet |
-| `mvn test` | `dotnet test` |
-
-## Rezultatele rulării (10.10.2026, local, Windows)
-
-| Suită | Rezultat |
-|---|---|
-| Playwright: API + UI pe Chromium și Firefox | **15/15 trecute** (8,9 s); **45/45** la `--repeat-each=3`, fără niciun test flaky |
-| C# NUnit: Refit + RestSharp | **11/11 trecute** (4 s), stabil la 3 rulări consecutive; testul „Before” e `Explicit`, deci sărit intenționat |
-| k6 smoke (2 VU × 30 s) | **toate thresholds trecute**: p95 = 133 ms, p99 = 134 ms, 0% erori, 132 de request-uri |
+---
+Author: [Ionut Aursulesei](https://www.linkedin.com/in/aursulesei-ionut-b8476385), QA Automation Engineer
