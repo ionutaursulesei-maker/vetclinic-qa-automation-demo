@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <!-- Overridden in Azure DevOps with a pipeline variable: -e API_URL=... or a variable group -->
+    <EnvironmentVariables>
+      <API_URL>https://petstore.swagger.io/v2/</API_URL>
+    </EnvironmentVariables>
+  </RunConfiguration>
+  <NUnit>
+    <NumberOfTestWorkers>4</NumberOfTestWorkers>
+  </NUnit>
+</RunSettings>

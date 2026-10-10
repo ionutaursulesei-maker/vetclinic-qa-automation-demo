@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VetClinic – Patient Registry</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; color: #1d1d1f; }
+    h1 { color: #12355b; }
+    form, .card { border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; margin: 8px 0 4px; font-weight: 600; }
+    input, select, button { font: inherit; padding: 6px 10px; }
+    button { background: #12355b; color: #fff; border: 0; border-radius: 6px; margin-top: 12px; cursor: pointer; }
+    .error { color: #b42318; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #e6f0fa; }
+  </style>
+</head>
+<body>
+  <h1>VetClinic – Patient Registry</h1>
+
+  <form id="register-form" aria-label="Register patient">
+    <h2>Register a patient</h2>
+    <label for="name">Patient name</label>
+    <input id="name" name="name" required>
+    <label for="species">Species</label>
+    <select id="species" name="species">
+      <option>Dog</option><option>Cat</option><option>Rabbit</option>
+    </select>
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="available">Admitted</option>
+      <option value="pending">Under treatment</option>
+      <option value="sold">Discharged</option>
+    </select>
+    <button type="submit">Register</button>
+    <p id="register-result" role="status"></p>
+  </form>
+
+  <form id="search-form" aria-label="Find patient">
+    <h2>Find a patient</h2>
+    <label for="patient-id">Patient ID</label>
+    <input id="patient-id" name="patientId" inputmode="numeric" required>
+    <button type="submit">Search</button>
+  </form>
+
+  <div id="patient-card" class="card" hidden>
+    <h3 id="card-name"></h3>
+    <p>Species: <span id="card-species"></span></p>
+    <p>Status: <span id="card-status" class="status"></span></p>
+  </div>
+  <p id="search-error" class="error" role="alert"></p>
+
+  <script>
+    const API = 'https://petstore.swagger.io/v2';
+    const STATUS_LABEL = { available: 'Admitted', pending: 'Under treatment', sold: 'Discharged' };
+
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+      const body = {
+        id,
+        name: e.target.name.value.trim(),
+        category: { id: 1, name: e.target.species.value },
+        photoUrls: [],
+        tags: [{ id: 1, name: 'vetclinic-demo' }],
+        status: e.target.status.value,
+      };
+      const out = document.getElementById('register-result');
+      try {
+        const res = await fetch(`${API}/pet`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const pet = await res.json();
+        out.textContent = `Patient registered with ID ${pet.id}`;
+        out.dataset.patientId = pet.id;
+      } catch (err) {
+        out.textContent = `Registration failed: ${err.message}`;
+      }
+    });
+
+    document.getElementById('search-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const card = document.getElementById('patient-card');
+      const error = document.getElementById('search-error');
+      card.hidden = true;
+      error.textContent = '';
+      const id = e.target.patientId.value.trim();
+      const res = await fetch(`${API}/pet/${encodeURIComponent(id)}`);
+      if (res.status === 404) {
+        error.textContent = 'Patient not found';
+        return;
+      }
+      if (!res.ok) {
+        error.textContent = `Unexpected error (HTTP ${res.status})`;
+        return;
+      }
+      const pet = await res.json();
+      document.getElementById('card-name').textContent = pet.name;
+      document.getElementById('card-species').textContent = pet.category?.name ?? 'Unknown';
+      document.getElementById('card-status').textContent = STATUS_LABEL[pet.status] ?? pet.status;
+      card.hidden = false;
+    });
+  </script>
+</body>
+</html>
