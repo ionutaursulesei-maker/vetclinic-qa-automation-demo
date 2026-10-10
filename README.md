@@ -87,3 +87,11 @@ k6 run -e PROFILE=smoke performance/patients-load.js
 | `try-with-resources` | `using var client = ...;` |
 | Maven `pom.xml` | `.csproj` + NuGet |
 | `mvn test` | `dotnet test` |
+
+## Rezultatele rulării (10.10.2026, local, Windows)
+
+| Suită | Rezultat |
+|---|---|
+| Playwright: API + UI pe Chromium și Firefox | **15/15 trecute** (8,9 s); **45/45** la `--repeat-each=3`, fără niciun test flaky |
+| C# NUnit: Refit + RestSharp | **11/11 trecute** (4 s), stabil la 3 rulări consecutive; testul „Before” e `Explicit`, deci sărit intenționat |
+| k6 smoke (2 VU × 30 s) | **toate thresholds trecute**: p95 = 133 ms, p99 = 134 ms, 0% erori, 132 de request-uri |
