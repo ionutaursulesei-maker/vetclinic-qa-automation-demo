@@ -32,7 +32,9 @@ export class PatientsPage {
     this.searchError = page.getByRole('alert');
   }
 
+  /** Opens the app with a stored consent choice so the cookie banner doesn't cover the forms. */
   async open() {
+    await this.page.addInitScript(() => localStorage.setItem('consent', 'rejected'));
     await this.page.goto('/');
   }
 
